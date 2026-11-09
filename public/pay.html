@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pay — PalPilot</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <style>
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #f3f6fb; color: #142033; display: grid; place-items: center; min-height: 100vh; padding: 16px; box-sizing: border-box; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 28px; width: 100%; max-width: 420px; box-shadow: 0 10px 30px #0b1f4b14; }
+    .by { font-size: 12px; color: #64748b; margin-bottom: 18px; }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .amt { font-size: 34px; font-weight: 800; margin: 8px 0 20px; color: #0b1f4b; }
+    .lines { font-size: 14px; border-top: 1px solid #f1f5f9; margin-bottom: 18px; }
+    .lines div { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #f1f5f9; }
+    .sim { width: 100%; padding: 13px; border: 0; border-radius: 999px; background: #ffc439; font-weight: 700; font-size: 15px; cursor: pointer; }
+    .note { font-size: 12px; color: #92400e; background: #fef3c7; padding: 8px 10px; border-radius: 8px; margin-top: 12px; }
+    .ok { text-align: center; } .ok .big { font-size: 48px; }
+    .err { color: #d93025; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card"><p>Loading…</p></div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    const card = document.getElementById("card");
+    const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+    const done = (title, sub) => (card.innerHTML = `<div class="ok"><div class="big">✅</div><h1>${esc(title)}</h1><p>${esc(sub || "")}</p></div>`);
+    const fail = (m) => (card.innerHTML = `<p class="err">⚠️ ${esc(m)}</p>`);
+    const header = (title, amount, currency) =>
+      `<div class="by">Secure checkout · powered by PalPilot + PayPal</div><h1>${esc(title)}</h1><div class="amt">${esc(currency)} ${esc(amount)}</div>`;
+
+    function loadSdk(clientId, currency) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=${encodeURIComponent(currency)}&intent=capture`;
+        s.onload = resolve;
+        s.onerror = () => reject(new Error("Could not load the PayPal JS SDK"));
+        document.head.append(s);
+      });
+    }
+
+    async function payOrder(cfg, id) {
+      const r = await fetch(`/api/orders/${encodeURIComponent(id)}`);
+      const o = await r.json();
+      if (!r.ok) return fail(o.error);
+      if (o.status === "COMPLETED") return done("Already paid", `Order ${o.order_id}`);
+      card.innerHTML = header(o.description || "Payment", o.amount.value, o.amount.currency_code) + `<div id="btns"></div>`;
+      const capture = async () => {
+        const c = await fetch(`/api/orders/${encodeURIComponent(id)}/capture`, { method: "POST" });
+        const body = await c.json();
+        if (!c.ok) return fail(body.error);
+        done("Payment complete", `${body.amount.currency_code} ${body.amount.value} · capture ${body.capture_id}`);
+      };
+      if (cfg.paypalClientId) {
+        await loadSdk(cfg.paypalClientId, o.amount.currency_code);
+        paypal.Buttons({ createOrder: () => id, onApprove: capture, onError: (e) => fail(e.message || String(e)) }).render("#btns");
+      } else {
+        document.getElementById("btns").innerHTML = `<button class="sim" id="p">Pay with PayPal (simulated)</button><div class="note">Simulator mode: add PayPal sandbox keys to use real PayPal Smart Buttons.</div>`;
+        document.getElementById("p").onclick = capture;
+      }
+    }
+
+    async function payInvoice(id) {
+      const r = await fetch(`/api/sim/invoices/${encodeURIComponent(id)}`);
+      const inv = await r.json();
+      if (!r.ok) return fail(inv.error);
+      if (inv.status === "PAID") return done("Invoice already paid", `#${inv.detail.invoice_number}`);
+      const lines = inv.items.map((it) => `<div><span>${esc(it.name)} × ${esc(it.quantity)}</span><span>${esc(it.unit_amount.value)}</span></div>`).join("");
+      card.innerHTML = header(`Invoice #${inv.detail.invoice_number}`, inv.amount.value, inv.amount.currency_code) +
+        `<div class="lines">${lines}</div><button class="sim" id="p">Pay invoice with PayPal (simulated)</button><div class="note">Simulator mode. Real sandbox invoices are paid on PayPal's invoice page.</div>`;
+      document.getElementById("p").onclick = async () => {
+        const p = await fetch(`/api/sim/invoices/${encodeURIComponent(id)}/pay`, { method: "POST" });
+        const b = await p.json();
+        p.ok ? done("Invoice paid", `${b.amount.currency_code} ${b.amount.value}`) : fail(b.error);
+      };
+    }
+
+    async function approveSub(id) {
+      card.innerHTML = header("Start your subscription", "", "") + `<button class="sim" id="p">Subscribe with PayPal (simulated)</button><div class="note">Simulator mode. Real sandbox subscriptions are approved on PayPal.</div>`;
+      document.getElementById("p").onclick = async () => {
+        const p = await fetch(`/api/sim/subscriptions/${encodeURIComponent(id)}/approve`, { method: "POST" });
+        p.ok ? done("You're subscribed!", id) : fail((await p.json()).error);
+      };
+    }
+
+    (async () => {
+      try {
+        if (q.get("done") === "order") return done("Payment complete", `Order ${q.get("order")}`);
+        if (q.get("done") === "subscription") return done("You're subscribed!", "Thanks for joining.");
+        const cfg = await (await fetch("/api/config")).json();
+        if (q.get("order")) return payOrder(cfg, q.get("order"));
+        if (q.get("invoice")) return payInvoice(q.get("invoice"));
+        if (q.get("subscription")) return approveSub(q.get("subscription"));
+        fail("Nothing to pay here.");
+      } catch (e) {
+        fail(e.message);
+      }
+    })();
+  </script>
+</body>
+</html>
