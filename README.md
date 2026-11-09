@@ -98,7 +98,7 @@ npm start                   # → http://localhost:3000
 
 ### Deploy (Render)
 
-Create a new **Web Service** from this repo with build command `npm install` and start command `npm start`. Add the environment variables above, including `ADMIN_PASSWORD`, and set `APP_URL` to the service URL.
+Create a new **Web Service** from this repo with build command `npm install` and start command `npm start`. Add the environment variables above, including `ADMIN_PASSWORD`. On Render, pay links use the service's public address automatically, so `APP_URL` can stay unset.
 
 Then, in your PayPal app, add a webhook pointing at `https://<your-app>/api/webhooks/paypal` for **Invoicing invoice paid** and **Billing subscription activated**, and set `PAYPAL_WEBHOOK_ID` to its ID. Without this, invoices paid on PayPal never show up in PalLedger.
 

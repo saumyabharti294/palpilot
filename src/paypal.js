@@ -16,10 +16,11 @@ export const isLive = () =>
 export function appUrl() {
   const port = process.env.PORT || 3000;
   const configured = process.env.APP_URL;
-  const { CODESPACE_NAME: name, GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: domain } = process.env;
-  // In a Codespace, localhost exists only inside the container, so links to it go nowhere.
-  if (name && domain && (!configured || /\/\/(localhost|127\.0\.0\.1)\b/.test(configured))) {
-    return `https://${name}-${port}.${domain}`;
+  const { CODESPACE_NAME: name, GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: domain, RENDER_EXTERNAL_URL: renderUrl } = process.env;
+  // A localhost address is useless to buyers, so prefer the host's public address.
+  if (!configured || /\/\/(localhost|127\.0\.0\.1)\b/.test(configured)) {
+    if (renderUrl) return renderUrl;
+    if (name && domain) return `https://${name}-${port}.${domain}`;
   }
   return configured || `http://localhost:${port}`;
 }
