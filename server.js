@@ -43,6 +43,8 @@ function requireMerchant(req, res, next) {
   if (req.method !== "GET" && req.headers["sec-fetch-site"] === "cross-site") {
     return res.status(403).json({ error: "Cross-site request refused" });
   }
+  // Opt-in: anyone with the URL can use the dashboard (fine for a sandbox demo).
+  if (process.env.PUBLIC_DASHBOARD === "true") return next();
   const password = process.env.ADMIN_PASSWORD;
   if (!password) {
     if (process.env.NODE_ENV === "production") return res.status(503).send("Set ADMIN_PASSWORD on the server to open the dashboard.");
@@ -215,5 +217,5 @@ app.listen(PORT, () => {
   console.log(`\n  PalPilot is running → http://localhost:${PORT}`);
   console.log(`  PayPal: ${isLive() ? `${process.env.PAYPAL_ENV === "live" ? "LIVE" : "sandbox"} API` : "simulator (set PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET for the sandbox)"}`);
   console.log(`  AI model: ${MODEL} (Google AI)`);
-  console.log(`  Dashboard login: ${process.env.ADMIN_PASSWORD ? "on" : "OFF (set ADMIN_PASSWORD before exposing this server)"}\n`);
+  console.log(`  Dashboard login: ${process.env.PUBLIC_DASHBOARD === "true" ? "OFF (PUBLIC_DASHBOARD=true, anyone with the URL can use it)" : process.env.ADMIN_PASSWORD ? "on" : "OFF (set ADMIN_PASSWORD before exposing this server)"}\n`);
 });
